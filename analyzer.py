@@ -26,9 +26,30 @@ def main():
     awslc_libs = get_libs(os.path.join(REPOS_DIR, "aws-lc"))
     openssl_symbols = get_symbols(openssl_libs)
     awslc_symbols = get_symbols(awslc_libs)
-    print(len(openssl_symbols))
-    print(len(awslc_symbols))
-    print(len(openssl_symbols.intersection(awslc_symbols)))
+    ruby_files = get_files(os.path.join(REPOS_DIR, "ruby"), ".h")
+    ruby_files.update(get_files(os.path.join(REPOS_DIR, "ruby"), ".c"))
+
+    ruby_openssl_symbols = set()
+    valid_c_symbol_chars = set()
+
+    def is_valid_c_symbol_char(c: str) -> bool:
+        assert len(c) == 1
+        return c.isalnum() or c == "_"
+
+    for file in ruby_files:
+        with open(file, "r") as f:
+            contents = f.read()
+            for symbol in openssl_symbols:
+                idx = contents.find(symbol)
+                if idx < 0:
+                    continue
+                if not is_valid_c_symbol_char(contents[idx + len(symbol)]) and (
+                    not is_valid_c_symbol_char(contents[idx - 1]) or len == 0
+                ):
+                    ruby_openssl_symbols.add(symbol)
+    awslc_missing = ruby_openssl_symbols.difference(awslc_symbols)
+    for s in sorted(awslc_missing, key=str.casefold):
+        print(s)
 
 
 def get_symbols(lib_paths: list[str]) -> set[str]:
@@ -37,7 +58,10 @@ def get_symbols(lib_paths: list[str]) -> set[str]:
         with open(lib_path, "rb") as f:
             elf = ELFFile(f)
             symbols.update(
-                s.name for s in elf.get_section_by_name(".dynsym").iter_symbols()
+                s.name
+                for s in elf.get_section_by_name(".dynsym").iter_symbols()
+                # filter out dynamic symbols from other linked libs (e.g. libc)
+                if s.entry["st_shndx"] != "SHN_UNDEF"
             )
     return symbols
 
@@ -46,13 +70,11 @@ def get_libs(root: str) -> list[str]:
     return [l for l in get_files(root, ".so") if l.split(os.path.sep)[-1] in LIBRARIES]
 
 
-def get_files(root: str, suffix: str) -> list[str]:
-    headers = []
+def get_files(root: str, suffix: str = "") -> set[str]:
+    files = set()
     for dpath, _, fnames in os.walk(root):
-        headers.extend(
-            [os.path.join(dpath, fn) for fn in fnames if fn.endswith(suffix)]
-        )
-    return headers
+        files.update([os.path.join(dpath, fn) for fn in fnames if fn.endswith(suffix)])
+    return files
 
 
 def fetch_source():
@@ -93,13 +115,19 @@ def build_common(repo: str, cmds: list[str]):
         cmd_words = cmd.split(" ")
         if cmd_words[0] == "make":
             cmd_words.extend(["-j", nproc])
-        subprocess.run(cmd_words, check=True, cwd=cwd)
+        subprocess.run(
+            cmd_words,
+            check=True,
+            cwd=cwd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
 
 
 def check_dependencies():
     deps = ["make", "cmake", "nproc"]
     for dep in deps:
-        subprocess.run(["which", dep], check=True)
+        subprocess.run(["which", dep], check=True, stdout=subprocess.DEVNULL)
 
 
 def repo_from_url(url: str) -> str:
