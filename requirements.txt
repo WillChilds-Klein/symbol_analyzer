@@ -57,6 +57,7 @@ ptyprocess==0.7.0
 pyasn1==0.4.8
 pyasn1-modules==0.2.1
 pycparser==2.21
+pyelftools==0.30
 Pygments==2.11.2
 PyGObject==3.42.1
 PyHamcrest==2.0.2

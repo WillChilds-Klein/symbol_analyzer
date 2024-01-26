@@ -2,9 +2,13 @@ import os
 import subprocess
 
 
+from elftools.elf.elffile import ELFFile
 from git import Repo
 
-
+LIBRARIES = [
+    "libcrypto.so",
+    "libssl.so",
+]
 REPOS_DIR = "repos"
 REPOS = [
     ["https://github.com/WillChilds-Klein/aws-lc", "main"],
@@ -18,9 +22,28 @@ def main():
     fetch_source()
     build_awslc()
     build_openssl_1_0_2()
-    # print(get_files(".", ".h"))
-    print(get_files("./repos/openssl", ".a"))
-    print(get_files("./repos/aws-lc", ".a"))
+    openssl_libs = get_libs(os.path.join(REPOS_DIR, "openssl"))
+    awslc_libs = get_libs(os.path.join(REPOS_DIR, "aws-lc"))
+    openssl_symbols = get_symbols(openssl_libs)
+    awslc_symbols = get_symbols(awslc_libs)
+    print(len(openssl_symbols))
+    print(len(awslc_symbols))
+    print(len(openssl_symbols.intersection(awslc_symbols)))
+
+
+def get_symbols(lib_paths: list[str]) -> set[str]:
+    symbols = set()
+    for lib_path in lib_paths:
+        with open(lib_path, "rb") as f:
+            elf = ELFFile(f)
+            symbols.update(
+                s.name for s in elf.get_section_by_name(".dynsym").iter_symbols()
+            )
+    return symbols
+
+
+def get_libs(root: str) -> list[str]:
+    return [l for l in get_files(root, ".so") if l.split(os.path.sep)[-1] in LIBRARIES]
 
 
 def get_files(root: str, suffix: str) -> list[str]:
@@ -51,12 +74,13 @@ def fetch_source():
 
 
 def build_awslc():
-    cmds = ["cmake -B build", "make -C build"]
+    cmds = ["cmake -B build -DBUILD_SHARED_LIBS=ON", "make -C build"]
     build_common("aws-lc", cmds)
 
 
+# TODO: create a Repo abc that requires users to provide a build method
 def build_openssl_1_0_2():
-    cmds = ["./config", "make"]
+    cmds = ["./config shared", "make"]
     build_common("openssl", cmds)
 
 
