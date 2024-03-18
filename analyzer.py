@@ -1,9 +1,11 @@
 import os
+import platform
 import subprocess
 
 
 from elftools.elf.elffile import ELFFile
 from git import Repo
+from pyclibrary import CParser
 
 LIBRARIES = [
     "libcrypto.so",
@@ -48,8 +50,16 @@ def main():
                 ):
                     ruby_openssl_symbols.add(symbol)
     awslc_missing = ruby_openssl_symbols.difference(awslc_symbols)
+    ossl_incl_dir = os.path.join(REPOS_DIR, "openssl", "include", "openssl")
+    parser = CParser(list(get_files(ossl_incl_dir, ".h")))
     for s in sorted(awslc_missing, key=str.casefold):
-        print(s)
+        if s in parser.defs['functions']:
+            print(parser.defs['functions'][s])
+        elif s in parser.defs['fnmacros']:
+            print(parser.defs['fnmacros'][s])
+        else:
+            print(f"SYMBOL NOT FOUND IN PARSER: {s} :: {parser.find(s)}")
+
 
 
 def get_symbols(lib_paths: list[str]) -> set[str]:
@@ -125,6 +135,7 @@ def build_common(repo: str, cmds: list[str]):
 
 
 def check_dependencies():
+    assert "Linux" in platform.platform(), "linux is the only supported platform"
     deps = ["make", "cmake", "nproc"]
     for dep in deps:
         subprocess.run(["which", dep], check=True, stdout=subprocess.DEVNULL)
