@@ -21,9 +21,13 @@ REPOS = [
 
 def main():
     check_dependencies()
+    print("fetching sources...")
     fetch_source()
+    print("building aws-lc...")
     build_awslc()
+    print("building openssl...")
     build_openssl_1_0_2()
+    print("scanning symbols and sources...")
     openssl_libs = get_libs(os.path.join(REPOS_DIR, "openssl"))
     awslc_libs = get_libs(os.path.join(REPOS_DIR, "aws-lc"))
     openssl_symbols = get_symbols(openssl_libs)
@@ -51,15 +55,16 @@ def main():
                     ruby_openssl_symbols.add(symbol)
     awslc_missing = ruby_openssl_symbols.difference(awslc_symbols)
     ossl_incl_dir = os.path.join(REPOS_DIR, "openssl", "include", "openssl")
+    print("parsing openssl headers...")
+    print()
     parser = CParser(list(get_files(ossl_incl_dir, ".h")))
     for s in sorted(awslc_missing, key=str.casefold):
-        if s in parser.defs['functions']:
-            print(parser.defs['functions'][s])
-        elif s in parser.defs['fnmacros']:
-            print(parser.defs['fnmacros'][s])
+        if s in parser.defs["functions"]:
+            print(parser.defs["functions"][s])
+        elif s in parser.defs["fnmacros"]:
+            print(parser.defs["fnmacros"][s])
         else:
             print(f"SYMBOL NOT FOUND IN PARSER: {s} :: {parser.find(s)}")
-
 
 
 def get_symbols(lib_paths: list[str]) -> set[str]:
@@ -125,13 +130,20 @@ def build_common(repo: str, cmds: list[str]):
         cmd_words = cmd.split(" ")
         if cmd_words[0] == "make":
             cmd_words.extend(["-j", nproc])
-        subprocess.run(
-            cmd_words,
-            check=True,
-            cwd=cwd,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
+        try:
+            subprocess.run(
+                cmd_words,
+                check=True,
+                cwd=cwd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.STDOUT,
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"WORK DIR: {cwd}")
+            print(f"COMMAND: {' && '.join(cmd_words)}")
+            print(f"STDERR: {e.stdout}")
+            print(f"STDERR: {e.stderr}")
+            raise e
 
 
 def check_dependencies():
