@@ -54,10 +54,10 @@ def main():
                 ):
                     ruby_openssl_symbols.add(symbol)
     awslc_missing = ruby_openssl_symbols.difference(awslc_symbols)
-    ossl_incl_dir = os.path.join(REPOS_DIR, "openssl", "include", "openssl")
     print("parsing openssl headers...")
     print()
-    parser = CParser(list(get_files(ossl_incl_dir, ".h")))
+    # NOTE: only openssl/include/openssl took 5m28.266s
+    parser = CParser(list(get_files(os.path.join(REPOS_DIR, "openssl"), ".h")))
     for s in sorted(awslc_missing, key=str.casefold):
         if s in parser.defs["functions"]:
             print(parser.defs["functions"][s])
