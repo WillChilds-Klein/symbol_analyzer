@@ -42,6 +42,7 @@ def main():
         assert len(c) == 1
         return c.isalnum() or c == "_"
 
+    # TODO: get symbols from actual ruby binary
     for file in ruby_files:
         with open(file, "r") as f:
             contents = f.read()
@@ -55,14 +56,15 @@ def main():
                     ruby_openssl_symbols.add(symbol)
     awslc_missing = ruby_openssl_symbols.difference(awslc_symbols)
     print("parsing openssl headers...")
+    ossl_include_dir = os.path.join(REPOS_DIR, "openssl", "include", "openssl")
+    parser = CParser(list(get_files(ossl_include_dir, ".h")))
+    parser.process_all()
     print()
-    # NOTE: only openssl/include/openssl took 5m28.266s
-    parser = CParser(list(get_files(os.path.join(REPOS_DIR, "openssl"), ".h")))
     for s in sorted(awslc_missing, key=str.casefold):
-        if s in parser.defs["functions"]:
-            print(parser.defs["functions"][s])
-        elif s in parser.defs["fnmacros"]:
-            print(parser.defs["fnmacros"][s])
+        for k in parser.defs:
+            if s in parser.defs[k]:
+                print(s, parser.defs[k][s])
+                break
         else:
             print(f"SYMBOL NOT FOUND IN PARSER: {s} :: {parser.find(s)}")
 
