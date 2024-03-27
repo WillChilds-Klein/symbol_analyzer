@@ -34,29 +34,17 @@ def main():
     awslc_libs = get_libs(os.path.join(REPOS_DIR, "aws-lc"))
     openssl_symbols = get_symbols(openssl_libs)
     awslc_symbols = get_symbols(awslc_libs)
-    ruby_files = get_files(os.path.join(REPOS_DIR, "ruby"), ".h")
-    ruby_files.update(get_files(os.path.join(REPOS_DIR, "ruby"), ".c"))
-
-    ruby_openssl_symbols = set()
-    valid_c_symbol_chars = set()
-
-    def is_valid_c_symbol_char(c: str) -> bool:
-        assert len(c) == 1
-        return c.isalnum() or c == "_"
-
-    # TODO: get symbols from actual ruby binary
-    for file in ruby_files:
-        with open(file, "r") as f:
-            contents = f.read()
-            for symbol in openssl_symbols:
-                idx = contents.find(symbol)
-                if idx < 0:
-                    continue
-                if not is_valid_c_symbol_char(contents[idx + len(symbol)]) and (
-                    not is_valid_c_symbol_char(contents[idx - 1]) or len == 0
-                ):
-                    ruby_openssl_symbols.add(symbol)
+    ruby_symbols = get_symbols(
+        get_files(os.path.abspath(f"{REPOS_DIR}/ruby/.ext"), "openssl.so"), linked=True
+    )
+    ruby_openssl_symbols = ruby_symbols.intersection(openssl_symbols)
     awslc_missing = ruby_openssl_symbols.difference(awslc_symbols)
+    print(
+        f"""
+        found {len(ruby_openssl_symbols)} ruby openssl symbols, \
+                {len(awslc_missing)} missing from AWS-LC
+    """.strip()
+    )
     print("parsing openssl headers...")
     ossl_include_dir = os.path.join(REPOS_DIR, "openssl", "include", "openssl")
     parser = CParser(list(get_files(ossl_include_dir, ".h")))
@@ -71,7 +59,7 @@ def main():
             print(f"SYMBOL NOT FOUND IN PARSER: {s} :: {parser.find(s)}")
 
 
-def get_symbols(lib_paths: list[str]) -> set[str]:
+def get_symbols(lib_paths: list[str], linked=False) -> set[str]:
     symbols = set()
     for lib_path in lib_paths:
         with open(lib_path, "rb") as f:
@@ -80,7 +68,7 @@ def get_symbols(lib_paths: list[str]) -> set[str]:
                 s.name
                 for s in elf.get_section_by_name(".dynsym").iter_symbols()
                 # filter out dynamic symbols from other linked libs (e.g. libc)
-                if s.entry["st_shndx"] != "SHN_UNDEF"
+                if linked or s.entry["st_shndx"] != "SHN_UNDEF"
             )
     return symbols
 
@@ -153,12 +141,15 @@ def build_ruby():
     ossl_lib = next(iter(ossl_lib))
     print("checking corect OpenSSL linkage...")
     p1 = subprocess.Popen(
-        ["ldd", ossl_lib], cwd=f"{REPOS_DIR}/ruby", stdout=subprocess.PIPE
+        ["ldd", ossl_lib],
+        cwd=f"{REPOS_DIR}/ruby",
+        stdout=subprocess.PIPE,
     )
     p2 = subprocess.check_call(
         ["grep", f"{REPOS_DIR}/openssl/install/"],
         cwd=f"{REPOS_DIR}/ruby",
         stdin=p1.stdout,
+        stdout=subprocess.DEVNULL,
     )
     p1.wait()
     print("checking corect OpenSSL version...")
@@ -179,6 +170,7 @@ def build_ruby():
         ["grep", "OpenSSL 1.0.2"],
         cwd=f"{REPOS_DIR}/ruby",
         stdin=p1.stdout,
+        stdout=subprocess.DEVNULL,
     )
     p1.wait()
 
