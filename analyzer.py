@@ -27,7 +27,7 @@ def main():
     build_awslc()
     print("building openssl...")
     build_openssl_1_0_2()
-    print("biulding ruby against openssl...")
+    print("building ruby against openssl...")
     build_ruby()
     print("scanning symbols and sources...")
     openssl_libs = get_libs(os.path.join(REPOS_DIR, "openssl"))
@@ -159,7 +159,6 @@ def build_ruby():
         ["grep", f"{REPOS_DIR}/openssl/install/"],
         cwd=f"{REPOS_DIR}/ruby",
         stdin=p1.stdout,
-        stdout=subprocess.DEVNULL,
     )
     p1.wait()
     print("checking corect OpenSSL version...")
@@ -171,30 +170,17 @@ def build_ruby():
             "-I./lib",
             "-ropenssl",
             "-e",
-            "'puts OpenSSL::OPENSSL_VERSION'",
+            "puts OpenSSL::OPENSSL_VERSION",
         ],
         cwd=f"{REPOS_DIR}/ruby",
         stdout=subprocess.PIPE,
     )
     p2 = subprocess.check_call(
-        ["cat", "-"],
-        # ["grep", "OpenSSL 1.0.2"],
+        ["grep", "OpenSSL 1.0.2"],
         cwd=f"{REPOS_DIR}/ruby",
         stdin=p1.stdout,
     )
     p1.wait()
-
-    # validate OSSL:
-    #
-    #   $ ./ruby -I./ -I.ext/x86_64-linux/ -I./lib -ropenssl -e 'puts OpenSSL::OPENSSL_VERSION'
-    #   OpenSSL 1.0.2v-dev  xx XXX xxxx
-    #
-    #   $ ldd ./.ext/x86_64-linux/openssl.so
-    #   linux-vdso.so.1 (0x00007ffdf9bdc000)
-    #   libssl.so.1.0.0 => /home/ubuntu/symbol_analyzer/repos/openssl/install//lib/libssl.so.1.0.0 (0x00007f680fe9a000)
-    #   libcrypto.so.1.0.0 => /home/ubuntu/symbol_analyzer/repos/openssl/install//lib/libcrypto.so.1.0.0 (0x00007f680fc00000)
-    #   libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007f680f800000)
-    #   /lib64/ld-linux-x86-64.so.2 (0x00007f680ff7a000)
 
 
 def build_common(repo: str, cmds: list[str], env: dict[str, str] = None):
