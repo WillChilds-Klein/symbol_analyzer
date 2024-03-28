@@ -6,6 +6,7 @@ import subprocess
 from elftools.elf.elffile import ELFFile
 from git import Repo
 from pyclibrary import CParser
+from pyclibrary.c_parser import Type
 
 LIBRARIES = [
     "libcrypto.so",
@@ -50,13 +51,48 @@ def main():
     parser = CParser(list(get_files(ossl_include_dir, ".h")))
     parser.process_all()
     print()
+    not_found = set()
     for s in sorted(awslc_missing, key=str.casefold):
         for k in parser.defs:
             if s in parser.defs[k]:
-                print(s, parser.defs[k][s])
+                print(unparse_type(parser.defs[k][s], name=s))
                 break
         else:
-            print(f"SYMBOL NOT FOUND IN PARSER: {s} :: {parser.find(s)}")
+            not_found.add(s)
+    print()
+    for s in not_found:
+        print(f"SYMBOL NOT FOUND IN PARSER: {s} :: {parser.find(s)}")
+
+
+def unparse_type(t: Type, name: str = None) -> str:
+    if t is None or (len(t) == 1 and t[0] == "void"):
+        return ""
+    elif type(t) == str:
+        return t
+    assert type(t) == Type
+    ret = (t.type_quals[0][0] + " ") if t.type_quals[0] else ""
+    # is it a function?
+    if len(t) >= 2 and (type(t[0]) in (Type, str, None)) and type(t[1]) == tuple:
+        return_type = unparse_type(t[0])
+        ret += (return_type if return_type else "void") + " "
+        ret += name if name else ""
+        ret += "("
+        args = []
+        for arg_name, arg_t, none in t[1]:
+            assert none is None and type(arg_t) == Type
+            args.append(unparse_type(arg_t) + ((" " + arg_name) if arg_name else ""))
+        ret += ", ".join(args)
+        ret += ") "
+        if return_type:
+            ret += "{ return 0; }"
+        else:
+            ret += "{}"
+    # fundamental type?
+    elif all(type(x) == str for x in t[:2]):
+        ret += " ".join(t[:2])
+    else:
+        raise Exception(f"Unrecognized Type {name} {str(t)}")
+    return ret
 
 
 def get_symbols(lib_paths: list[str], linked=False) -> set[str]:
