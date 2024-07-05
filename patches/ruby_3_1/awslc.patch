@@ -1,0 +1,14 @@
+diff --git a/include/ruby/defines.h b/include/ruby/defines.h
+index 48184f8a18..b56c7dbd61 100644
+--- a/include/ruby/defines.h
++++ b/include/ruby/defines.h
+@@ -84,6 +84,9 @@
+  */
+ #define RUBY
+
++#define OPENSSL_NO_TS
++#define OPENSSL_NO_ENGINE
++
+ #ifdef __GNUC__
+ # /** This is expanded to nothing for non-GCC compilers. */
+ # define RB_GNUC_EXTENSION __extension__

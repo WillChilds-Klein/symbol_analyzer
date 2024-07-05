@@ -24,6 +24,8 @@ def main():
     check_dependencies()
     print("fetching sources...")
     fetch_source()
+    print("applying patches...")
+    apply_patches("./patches/ruby_3_1", f"{REPOS_DIR}/ruby")
     print("building aws-lc...")
     build_awslc()
     print("building openssl...")
@@ -41,10 +43,7 @@ def main():
     ruby_openssl_symbols = ruby_symbols.intersection(openssl_symbols)
     awslc_missing = ruby_openssl_symbols.difference(awslc_symbols)
     print(
-        f"""
-        found {len(ruby_openssl_symbols)} ruby openssl symbols, \
-                {len(awslc_missing)} missing from AWS-LC
-    """.strip()
+        f"""found {len(ruby_openssl_symbols)} ruby openssl symbols, {len(awslc_missing)} missing from AWS-LC"""
     )
     print("parsing openssl headers...")
     ossl_include_dir = os.path.join(REPOS_DIR, "openssl", "include", "openssl")
@@ -156,7 +155,6 @@ def build_openssl_1_0_2():
 
 
 def build_ruby():
-    # TODO: patch ruby to disable TTS protocol + other unwanted stuff
     ossl_dir = os.path.abspath(f"{REPOS_DIR}/openssl/install")
     cmds = [
         "./autogen.sh",
@@ -209,6 +207,11 @@ def build_ruby():
         stdout=subprocess.DEVNULL,
     )
     p1.wait()
+
+
+def apply_patches(patch_dir: str, target_repo: str):
+    for patch in get_files(patch_dir):
+        Repo(target_repo).git.apply([patch])
 
 
 def build_common(repo: str, cmds: list[str], env: dict[str, str] = None):
