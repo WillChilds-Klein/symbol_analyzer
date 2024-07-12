@@ -14,9 +14,9 @@ LIBRARIES = [
 ]
 REPOS_DIR = "repos"
 REPOS = [
-    ["https://github.com/WillChilds-Klein/aws-lc", "main"],
-    ["https://github.com/openssl/openssl", "OpenSSL_1_0_2-stable"],
-    ["https://github.com/WillChilds-Klein/ruby", "ruby_3_1"],
+    ["https://github.com/aws/aws-lc", "main"],
+    ["https://github.com/openssl/openssl", "OpenSSL_1_1_1-stable"],
+    ["https://github.com/pyca/cryptography", "41.0.x"],
 ]
 
 
@@ -24,26 +24,25 @@ def main():
     check_dependencies()
     print("fetching sources...")
     fetch_source()
-    print("applying patches...")
-    apply_patches("./patches/ruby_3_1", f"{REPOS_DIR}/ruby")
     print("building aws-lc...")
     build_awslc()
     print("building openssl...")
-    build_openssl_1_0_2()
-    print("building ruby against openssl...")
-    build_ruby()
+    build_openssl_1_1_1()
+    target = REPOS[2][0].split("/")[-1]
+    print("building target against openssl...")
+    build_target(target)
     print("scanning symbols and sources...")
     openssl_libs = get_libs(os.path.join(REPOS_DIR, "openssl"))
     awslc_libs = get_libs(os.path.join(REPOS_DIR, "aws-lc"))
     openssl_symbols = get_symbols(openssl_libs)
     awslc_symbols = get_symbols(awslc_libs)
-    ruby_symbols = get_symbols(
-        get_files(os.path.abspath(f"{REPOS_DIR}/ruby/.ext"), "openssl.so"), linked=True
-    )
-    ruby_openssl_symbols = ruby_symbols.intersection(openssl_symbols)
-    awslc_missing = ruby_openssl_symbols.difference(awslc_symbols)
+    target_elf = get_files(os.path.abspath(f"{REPOS_DIR}/{target}/"), ".so")
+    assert len(target_elf) == 1
+    target_symbols = get_symbols(target_elf, linked=True)
+    target_openssl_symbols = target_symbols.intersection(openssl_symbols)
+    awslc_missing = target_openssl_symbols.difference(awslc_symbols)
     print(
-        f"""found {len(ruby_openssl_symbols)} ruby openssl symbols, {len(awslc_missing)} missing from AWS-LC"""
+        f"""found {len(target_openssl_symbols)} target openssl symbols, {len(awslc_missing)} missing from AWS-LC"""
     )
     print("parsing openssl headers...")
     ossl_include_dir = os.path.join(REPOS_DIR, "openssl", "include", "openssl")
@@ -144,7 +143,7 @@ def build_awslc():
 
 
 # TODO: create a Repo abc that requires users to provide a build method
-def build_openssl_1_0_2():
+def build_openssl_1_1_1():
     ossl_dir = os.path.abspath(f"{REPOS_DIR}/openssl/install")
     cmds = [
         f"./config --prefix={ossl_dir} --openssldir={ossl_dir}/openssl shared",
@@ -154,55 +153,37 @@ def build_openssl_1_0_2():
     build_common("openssl", cmds)
 
 
-def build_ruby():
+def build_target(target: str):
     ossl_dir = os.path.abspath(f"{REPOS_DIR}/openssl/install")
     cmds = [
-        "./autogen.sh",
-        f"""\
-            ./configure --with-openssl-dir={ossl_dir} \
-                        --with-openssl-lib={ossl_dir}/lib \
-                        --with-openssl-include={ossl_dir}/include \
-        """.strip(),
-        "make",
+        f"pip wheel --no-cache-dir --no-binary {target} {target}",
     ]
     env = {
+        "OPENSSL_DIR": f"{ossl_dir}",
         "CPPFLAGS": f"-I{ossl_dir}/include",
         "LDFLAGS": f"-L{ossl_dir}/lib",
     }
-    build_common("ruby", cmds, env=env)
-    ossl_lib = get_files(os.path.abspath(f"{REPOS_DIR}/ruby/.ext"), "openssl.so")
-    assert len(ossl_lib) == 1, ossl_lib
-    ossl_lib = next(iter(ossl_lib))
+    build_common(target, cmds, env=env)
+    scratch_dir = "scratch"
+    cmds = [
+        f"rm -rf {scratch_dir}",
+        f"mkdir {scratch_dir}",
+        f"unzip {target}-*-linux_x86_64.whl -d {scratch_dir}",
+    ]
+    build_common(target, cmds)
+    target_elf = get_files(os.path.abspath(f"{REPOS_DIR}/{target}/{scratch_dir}"), ".so")
+    assert len(target_elf) == 1, target_elf
+    target_elf = next(iter(target_elf))
     print("checking corect OpenSSL linkage...")
     p1 = subprocess.Popen(
-        ["ldd", ossl_lib],
-        cwd=f"{REPOS_DIR}/ruby",
+        ["ldd", target_elf],
+        cwd=f"{REPOS_DIR}/{target}",
+        env={"LD_LIBRARY_PATH": f"{ossl_dir}/lib"},
         stdout=subprocess.PIPE,
     )
     p2 = subprocess.check_call(
-        ["grep", f"{REPOS_DIR}/openssl/install/"],
-        cwd=f"{REPOS_DIR}/ruby",
-        stdin=p1.stdout,
-        stdout=subprocess.DEVNULL,
-    )
-    p1.wait()
-    print("checking corect OpenSSL version...")
-    p1 = subprocess.Popen(
-        [
-            "./ruby",
-            "-I.",
-            "-I.ext/x86_64-linux",
-            "-I./lib",
-            "-ropenssl",
-            "-e",
-            "puts OpenSSL::OPENSSL_VERSION",
-        ],
-        cwd=f"{REPOS_DIR}/ruby",
-        stdout=subprocess.PIPE,
-    )
-    p2 = subprocess.check_call(
-        ["grep", "OpenSSL 1.0.2"],
-        cwd=f"{REPOS_DIR}/ruby",
+        ["grep", f"{ossl_dir}"],
+        cwd=f"{REPOS_DIR}/{target}",
         stdin=p1.stdout,
         stdout=subprocess.DEVNULL,
     )
