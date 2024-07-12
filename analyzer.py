@@ -36,9 +36,8 @@ def main():
     awslc_libs = get_libs(os.path.join(REPOS_DIR, "aws-lc"))
     openssl_symbols = get_symbols(openssl_libs)
     awslc_symbols = get_symbols(awslc_libs)
-    target_elf = get_files(os.path.abspath(f"{REPOS_DIR}/{target}/"), ".so")
-    assert len(target_elf) == 1
-    target_symbols = get_symbols(target_elf, linked=True)
+    target_elfs = get_files(os.path.abspath(f"{REPOS_DIR}/{target}/"), "libcryptography_rust.so")
+    target_symbols = get_symbols(target_elfs, linked=True)
     target_openssl_symbols = target_symbols.intersection(openssl_symbols)
     awslc_missing = target_openssl_symbols.difference(awslc_symbols)
     print(
@@ -137,7 +136,13 @@ def fetch_source():
 
 
 def build_awslc():
-    cmds = ["cmake -B build -DBUILD_SHARED_LIBS=ON", "make -C build"]
+    cmds = [
+        "rm -rf install",
+        "mkdir -p install",
+        "cmake -B build -DBUILD_SHARED_LIBS=ON -DCMAKE_INSTALL_PREFIX=./install",
+        "make -C build",
+        "make -C build install",
+    ]
     # TODO make install into local repo
     build_common("aws-lc", cmds)
 
@@ -156,7 +161,7 @@ def build_openssl_1_1_1():
 def build_target(target: str):
     ossl_dir = os.path.abspath(f"{REPOS_DIR}/openssl/install")
     cmds = [
-        f"pip wheel --no-cache-dir --no-binary {target} {target}",
+        f"pip wheel --no-cache-dir --no-binary {target} .",
     ]
     env = {
         "OPENSSL_DIR": f"{ossl_dir}",
@@ -227,7 +232,7 @@ def build_common(repo: str, cmds: list[str], env: dict[str, str] = None):
 
 def check_dependencies():
     assert "Linux" in platform.platform(), "linux is the only supported platform"
-    deps = ["make", "cmake", "nproc"]
+    deps = ["make", "cmake", "nproc", "rustc", "cargo", "pip", "unzip"]
     for dep in deps:
         subprocess.run(["which", dep], check=True, stdout=subprocess.DEVNULL)
 
